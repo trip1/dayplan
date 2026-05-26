@@ -14,7 +14,11 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 
 /**
@@ -28,6 +32,7 @@ data class ScheduleUiState(
     val showAddTaskDialog: Boolean = false,
     val showAddGroupDialog: Boolean = false,
     val editingTask: DayTask? = null,
+    val prefillStartMinute: Int? = null,   // when tapping timeline, pre-fill this time
 ) {
     companion object {
         fun today(): String = Clock.System.now()
@@ -62,6 +67,18 @@ class ScheduleViewModel(
         }.launchIn(scope)
     }
 
+    fun prevDay() {
+        val currentDate = LocalDate.parse(_state.value.date)
+        val newDate = currentDate.minus(DatePeriod(days = 1))
+        changeDate(newDate.toString())
+    }
+
+    fun nextDay() {
+        val currentDate = LocalDate.parse(_state.value.date)
+        val newDate = currentDate.plus(DatePeriod(days = 1))
+        changeDate(newDate.toString())
+    }
+
     fun changeDate(newDate: String) {
         scope.launch {
             val tasks = repository.getTasksForDate(newDate)
@@ -69,16 +86,16 @@ class ScheduleViewModel(
         }
     }
 
-    fun showAddTaskDialog() {
-        _state.update { it.copy(showAddTaskDialog = true, editingTask = null) }
+    fun showAddTaskDialog(prefillMinute: Int? = null) {
+        _state.update { it.copy(showAddTaskDialog = true, editingTask = null, prefillStartMinute = prefillMinute) }
     }
 
     fun showEditTask(task: DayTask) {
-        _state.update { it.copy(showAddTaskDialog = true, editingTask = task) }
+        _state.update { it.copy(showAddTaskDialog = true, editingTask = task, prefillStartMinute = null) }
     }
 
     fun dismissAddTaskDialog() {
-        _state.update { it.copy(showAddTaskDialog = false, editingTask = null) }
+        _state.update { it.copy(showAddTaskDialog = false, editingTask = null, prefillStartMinute = null) }
     }
 
     fun showAddGroupDialog() {

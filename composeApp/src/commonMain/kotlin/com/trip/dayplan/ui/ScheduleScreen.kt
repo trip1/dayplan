@@ -13,11 +13,24 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +89,70 @@ private const val TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60
 private const val PIXELS_PER_MINUTE = 1.5f
 
 @Composable
+private fun NotificationTicker(viewModel: ScheduleViewModel) {
+    val state by viewModel.state.collectAsState()
+    val nowMinute by produceState(initialValue = 0) {
+        while (true) {
+            val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+            value = now.hour * 60 + now.minute
+            delay(30_000) // tick every 30s
+        }
+    }
+
+    val nextTask = viewModel.getNextTask()
+    val endingTasks = getTasksExpiringSoon(state.tasks, nowMinute)
+
+    if (nextTask == null && endingTasks.isEmpty()) return
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        color = DayPlanTheme.primary.copy(alpha = 0.08f),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            // Next task
+            if (nextTask != null) {
+                val timeUntil = nextTask.startMinute - nowMinute
+                val timeText = if (timeUntil < 60) "in ${timeUntil}m" else "in ${timeUntil / 60}h ${timeUntil % 60}m"
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .background(parseHexColor(nextTask.colorHex), RoundedCornerShape(2.dp)),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Next: ${nextTask.name} · $timeText",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = DayPlanTheme.textPrimary,
+                    )
+                }
+            }
+            // Ending soon
+            endingTasks.forEach { task ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .background(parseHexColor(task.colorHex), RoundedCornerShape(2.dp)),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Ending: ${task.name} · ${task.durationMinutes - (nowMinute - task.startMinute)}m left",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFE53E3E),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun App(viewModel: ScheduleViewModel) {
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -86,11 +163,14 @@ fun App(viewModel: ScheduleViewModel) {
             color = DayPlanTheme.background,
         ) {
             Column {
+                // Notification ticker
+                NotificationTicker(viewModel)
+
                 // Top bar
                 DateHeader(
                     date = state.date,
-                    onPrevDay = { /* TODO: date navigation */ },
-                    onNextDay = { /* TODO: date navigation */ },
+                    onPrevDay = { viewModel.prevDay() },
+                    onNextDay = { viewModel.nextDay() },
                 )
 
                 // Timeline
@@ -110,6 +190,10 @@ fun App(viewModel: ScheduleViewModel) {
                             viewModel.moveTask(task, clamped)
                         }
                     },
+                    onEmptyTap = { minute ->
+                        val rounded = ((minute + 2) / 5) * 5  // Round to nearest 5 min
+                        viewModel.showAddTaskDialog(prefillMinute = rounded)
+                    },
                 )
             }
 
@@ -118,6 +202,7 @@ fun App(viewModel: ScheduleViewModel) {
                 AddTaskDialog(
                     editingTask = state.editingTask,
                     groups = state.groups,
+                    prefillStartMinute = state.prefillStartMinute,
                     onDismiss = { viewModel.dismissAddTaskDialog() },
                     onSave = { task ->
                         scope.launch {
@@ -187,7 +272,7 @@ private fun DateHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onPrevDay) {
-            Icon(Icons.Default.ArrowBack, "Previous day", tint = DayPlanTheme.textSecondary)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous day", tint = DayPlanTheme.textSecondary)
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
@@ -203,10 +288,10 @@ private fun DateHeader(
             )
         }
         IconButton(onClick = onNextDay) {
-            Icon(Icons.Default.ArrowForward, "Next day", tint = DayPlanTheme.textSecondary)
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next day", tint = DayPlanTheme.textSecondary)
         }
     }
-    Divider(color = DayPlanTheme.divider)
+    HorizontalDivider(color = DayPlanTheme.divider)
 }
 
 @Composable
@@ -217,6 +302,7 @@ private fun TimelineView(
     onTaskClick: (DayTask) -> Unit,
     onTaskLongPress: (DayTask) -> Unit,
     onTaskDrag: (DayTask, Int) -> Unit,
+    onEmptyTap: (Int) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val pixelsPerMinute = with(density) { PIXELS_PER_MINUTE.dp.toPx() }
@@ -236,10 +322,9 @@ private fun TimelineView(
             .verticalScroll(rememberScrollState())
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
-                    // Tap on empty space → add task at that time
                     val minute = (offset.y / pixelsPerMinute).toInt() + START_HOUR * 60
                     if (minute in START_HOUR * 60 until END_HOUR * 60) {
-                        // Could open add dialog with pre-filled time
+                        onEmptyTap(minute)
                     }
                 }
             },
@@ -441,6 +526,7 @@ private fun TaskBlock(
 private fun AddTaskDialog(
     editingTask: DayTask?,
     groups: List<TaskGroup>,
+    prefillStartMinute: Int?,
     onDismiss: () -> Unit,
     onSave: (DayTask) -> Unit,
     onDelete: (Long) -> Unit,
@@ -448,8 +534,9 @@ private fun AddTaskDialog(
     var name by remember { mutableStateOf(editingTask?.name ?: "") }
     var description by remember { mutableStateOf(editingTask?.description ?: "") }
     var duration by remember { mutableStateOf((editingTask?.durationMinutes ?: 30).toString()) }
-    var startHour by remember { mutableStateOf(editingTask?.startMinute?.div(60) ?: 9) }
-    var startMin by remember { mutableStateOf(editingTask?.startMinute?.rem(60) ?: 0) }
+    val defaultMinute = editingTask?.startMinute ?: prefillStartMinute ?: 9 * 60
+    var startHour by remember { mutableStateOf(defaultMinute / 60) }
+    var startMin by remember { mutableStateOf(defaultMinute % 60) }
     var selectedGroupId by remember { mutableStateOf<Long?>(editingTask?.groupId) }
 
     val date = ScheduleUiState.today()

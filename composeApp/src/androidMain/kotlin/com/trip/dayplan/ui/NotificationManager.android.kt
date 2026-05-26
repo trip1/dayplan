@@ -3,8 +3,8 @@ package com.trip.dayplan.ui
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import com.trip.dayplan.NotificationReceiver
-import java.util.Calendar
 
 actual object NotificationManager {
     private var context: Context? = null
