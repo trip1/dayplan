@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.AlertDialog
@@ -29,9 +31,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -45,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.trip.dayplan.domain.AppSettings
 import com.trip.dayplan.domain.DayTask
 import com.trip.dayplan.domain.TaskGroup
 import kotlinx.coroutines.delay
@@ -54,6 +61,7 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlin.math.abs
 
 /**
  * Parse a hex color string (#RRGGBB or #RGB) into a Compose Color.
@@ -127,7 +135,7 @@ private fun NotificationTicker(viewModel: ScheduleViewModel) {
     }
 
     val nextTask = viewModel.getNextTask()
-    val endingTasks = getExpiringTasks(state.tasks, nowMinute)
+    val endingTasks = getExpiringTasks(viewModel.getFilteredTasks(), nowMinute)
 
     if (nextTask == null && endingTasks.isEmpty()) return
 
@@ -188,14 +196,15 @@ fun App(viewModel: ScheduleViewModel) {
     LaunchedEffect(state.tasks) {
         NotificationManager.cancelAllNotifications()
         state.tasks.forEach { task ->
-            if (!task.isCompleted) {
-                // 5-min before task ends
+            if (!task.isCompleted && task.reminderMinutes > 0) {
+                // Use per-task reminder time
                 val endMinute = task.startMinute + task.durationMinutes
-                if (endMinute - 5 >= 0) {
+                val reminderTime = endMinute - task.reminderMinutes
+                if (reminderTime >= 0) {
                     NotificationManager.scheduleTaskReminder(
                         task.name,
-                        minutesBefore = 5,
-                        timestampMillis = todayMillis(task.date) + endMinute * 60_000L - 5 * 60_000L,
+                        minutesBefore = task.reminderMinutes,
+                        timestampMillis = todayMillis(task.date) + reminderTime * 60_000L,
                     )
                 }
             }
@@ -209,7 +218,7 @@ fun App(viewModel: ScheduleViewModel) {
         }
     }
 
-    DayPlanAppTheme {
+    DayPlanAppTheme(darkTheme = state.settings.darkTheme) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = DayPlanTheme.background,
@@ -218,16 +227,24 @@ fun App(viewModel: ScheduleViewModel) {
                 // Notification ticker
                 NotificationTicker(viewModel)
 
+                // Group filter chips
+                GroupFilterBar(
+                    groups = state.groups,
+                    activeGroupId = state.activeFilterGroupId,
+                    onToggleFilter = { viewModel.toggleGroupFilter(it) },
+                )
+
                 // Top bar
                 DateHeader(
                     date = state.date,
                     onPrevDay = { viewModel.prevDay() },
                     onNextDay = { viewModel.nextDay() },
+                    onSettingsClick = { viewModel.showSettingsDialog() },
                 )
 
                 // Timeline
                 TimelineView(
-                    tasks = state.tasks,
+                    tasks = viewModel.getFilteredTasks(),
                     groups = state.groups,
                     onAddTask = { viewModel.showAddTaskDialog() },
                     onTaskClick = { viewModel.showEditTask(it) },
@@ -238,13 +255,18 @@ fun App(viewModel: ScheduleViewModel) {
                     },
                     onTaskDrag = { task, newMinute ->
                         scope.launch {
-                            val clamped = newMinute.coerceIn(START_HOUR * 60, END_HOUR * 60 - 5)
+                            val clamped = newMinute.coerceIn(state.settings.startHour * 60, state.settings.endHour * 60 - 5)
                             viewModel.moveTask(task, clamped)
                         }
                     },
                     onEmptyTap = { minute ->
-                        val rounded = ((minute + 2) / 5) * 5  // Round to nearest 5 min
+                        val rounded = ((minute + 2) / 5) * 5
                         viewModel.showAddTaskDialog(prefillMinute = rounded)
+                    },
+                    onSwipeDelete = { task ->
+                        scope.launch {
+                            viewModel.deleteTask(task.id)
+                        }
                     },
                 )
             }
@@ -255,6 +277,7 @@ fun App(viewModel: ScheduleViewModel) {
                     editingTask = state.editingTask,
                     groups = state.groups,
                     prefillStartMinute = state.prefillStartMinute,
+                    defaultReminder = state.settings.defaultReminder,
                     onDismiss = { viewModel.dismissAddTaskDialog() },
                     onSave = { task ->
                         scope.launch {
@@ -282,6 +305,59 @@ fun App(viewModel: ScheduleViewModel) {
                     },
                 )
             }
+
+            if (state.showSettingsDialog) {
+                SettingsDialog(
+                    settings = state.settings,
+                    onDismiss = { viewModel.dismissSettingsDialog() },
+                    onSave = { updated ->
+                        scope.launch {
+                            viewModel.updateSetting { updated }
+                            viewModel.dismissSettingsDialog()
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupFilterBar(
+    groups: List<TaskGroup>,
+    activeGroupId: Long?,
+    onToggleFilter: (Long?) -> Unit,
+) {
+    if (groups.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // "All" chip
+        FilterChip(
+            selected = activeGroupId == null,
+            onClick = { onToggleFilter(null) },
+            label = { Text("All", fontSize = 12.sp) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = DayPlanTheme.primary,
+                selectedLabelColor = Color.White,
+            ),
+        )
+        groups.forEach { group ->
+            val groupColor = try { parseHexColor(group.colorHex) } catch (e: Exception) { DayPlanTheme.primary }
+            FilterChip(
+                selected = activeGroupId == group.id,
+                onClick = { onToggleFilter(group.id) },
+                label = { Text(group.name, fontSize = 12.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = groupColor,
+                    selectedLabelColor = Color.White,
+                ),
+            )
         }
     }
 }
@@ -291,6 +367,7 @@ private fun DateHeader(
     date: String,
     onPrevDay: () -> Unit,
     onNextDay: () -> Unit,
+    onSettingsClick: () -> Unit = {},
 ) {
     val parsed = kotlin.runCatching {
         kotlinx.datetime.LocalDate.parse(date)
@@ -334,13 +411,22 @@ private fun DateHeader(
                 color = DayPlanTheme.textPrimary,
             )
             Text(
-                text = "Tap a task to edit · Long press to complete",
+                text = "Tap a task to edit · Long press to complete · Swipe left to delete",
                 fontSize = 11.sp,
                 color = DayPlanTheme.textSecondary,
             )
         }
-        IconButton(onClick = onNextDay) {
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next day", tint = DayPlanTheme.textSecondary)
+        Row {
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.Settings,
+                    "Settings",
+                    tint = DayPlanTheme.textSecondary,
+                )
+            }
+            IconButton(onClick = onNextDay) {
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next day", tint = DayPlanTheme.textSecondary)
+            }
         }
     }
     HorizontalDivider(color = DayPlanTheme.divider)
@@ -355,6 +441,7 @@ private fun TimelineView(
     onTaskLongPress: (DayTask) -> Unit,
     onTaskDrag: (DayTask, Int) -> Unit,
     onEmptyTap: (Int) -> Unit = {},
+    onSwipeDelete: (DayTask) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val pixelsPerMinute = with(density) { PIXELS_PER_MINUTE.dp.toPx() }
@@ -442,6 +529,7 @@ private fun TimelineView(
                                     onTaskDrag(task, newMinute)
                                 }
                             },
+                            onSwipeDelete = { onSwipeDelete(task) },
                         )
                     }
 
@@ -505,12 +593,17 @@ private fun TaskBlock(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
     onDrag: (Float) -> Unit,
+    onSwipeDelete: () -> Unit = {},
 ) {
     val blockTop = ((task.startMinute - START_HOUR * 60) * pixelsPerMinute).dp
     val blockHeight = (task.durationMinutes * pixelsPerMinute).dp.coerceAtLeast(28.dp)
     val taskColor = try { parseHexColor(task.colorHex) } catch (e: Exception) { DayPlanTheme.primary }
 
     val isCompleted = task.isCompleted
+
+    // Swipe state
+    var swipeOffsetX by remember { mutableFloatStateOf(0f) }
+    val swipeThreshold = 60f // px to trigger delete
 
     Box(
         modifier = Modifier
@@ -522,26 +615,55 @@ private fun TaskBlock(
                 color = if (isCompleted) taskColor.copy(alpha = 0.3f) else taskColor.copy(alpha = 0.85f),
                 shape = RoundedCornerShape(6.dp),
             )
-            .clickable(onClick = onClick)
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragEnd = {
+                        if (swipeOffsetX < -swipeThreshold) {
+                            onSwipeDelete()
+                        }
+                        swipeOffsetX = 0f
+                    },
+                ) { change, dragAmount ->
+                    change.consume()
+                    if (abs(dragAmount.x) > abs(dragAmount.y)) {
+                        swipeOffsetX += dragAmount.x
+                        // Clamp to left only
+                        swipeOffsetX = swipeOffsetX.coerceAtMost(0f)
+                    } else {
+                        onDrag(dragAmount.y)
+                    }
+                }
+            }
+            .clickable { onClick() }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onLongPress = { onLongPress() },
                     onTap = { onClick() },
                 )
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragEnd = { /* drag handled in parent */ },
-                ) { change, dragAmount ->
-                    change.consume()
-                    onDrag(dragAmount.y)
-                }
             },
     ) {
+        // Delete indicator (red background revealed on swipe)
+        if (swipeOffsetX < 0) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color(0xFFE53E3E), RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.Delete,
+                    "Delete",
+                    tint = Color.White,
+                    modifier = Modifier.padding(end = 12.dp).size(18.dp),
+                )
+            }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp, vertical = 2.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+                .offset(x = swipeOffsetX.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isCompleted) {
@@ -579,6 +701,7 @@ private fun AddTaskDialog(
     editingTask: DayTask?,
     groups: List<TaskGroup>,
     prefillStartMinute: Int?,
+    defaultReminder: Int = 5,
     onDismiss: () -> Unit,
     onSave: (DayTask) -> Unit,
     onDelete: (Long) -> Unit,
@@ -590,6 +713,7 @@ private fun AddTaskDialog(
     var startHour by remember { mutableStateOf(defaultMinute / 60) }
     var startMin by remember { mutableStateOf(defaultMinute % 60) }
     var selectedGroupId by remember { mutableStateOf<Long?>(editingTask?.groupId) }
+    var reminderMinutes by remember { mutableStateOf(editingTask?.reminderMinutes ?: defaultReminder) }
 
     val date = ScheduleUiState.today()
 
@@ -637,6 +761,19 @@ private fun AddTaskDialog(
                             label = { Text("Min") },
                             modifier = Modifier.width(72.dp),
                             singleLine = true,
+                        )
+                    }
+                }
+                // Reminder picker
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Remind", fontSize = 12.sp, color = DayPlanTheme.textSecondary, modifier = Modifier.width(56.dp))
+                    val reminderOptions = listOf(0, 1, 3, 5, 10, 15, 30)
+                    reminderOptions.forEach { mins ->
+                        FilterChip(
+                            selected = reminderMinutes == mins,
+                            onClick = { reminderMinutes = mins },
+                            label = { Text(if (mins == 0) "Off" else "${mins}m", fontSize = 11.sp) },
+                            modifier = Modifier.padding(end = 4.dp),
                         )
                     }
                 }
@@ -695,6 +832,7 @@ private fun AddTaskDialog(
                         groupId = selectedGroupId,
                         date = date,
                         startMinute = startHour * 60 + roundedMin,
+                        reminderMinutes = reminderMinutes,
                     )
                     onSave(task)
                 },
@@ -806,4 +944,102 @@ private fun formatTime(time: kotlinx.datetime.LocalTime): String {
     val suffix = if (hour < 12) "AM" else "PM"
     val displayHour = if (hour == 0 || hour == 12) 12 else if (hour > 12) hour - 12 else hour
     return "$displayHour:$min $suffix"
+}
+
+@Composable
+private fun SettingsDialog(
+    settings: AppSettings,
+    onDismiss: () -> Unit,
+    onSave: (AppSettings) -> Unit,
+) {
+    var darkTheme by remember { mutableStateOf(settings.darkTheme) }
+    var startHour by remember { mutableStateOf(settings.startHour.toString()) }
+    var endHour by remember { mutableStateOf(settings.endHour.toString()) }
+    var defaultDuration by remember { mutableStateOf(settings.defaultDuration.toString()) }
+    var defaultReminder by remember { mutableStateOf(settings.defaultReminder.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Settings") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Dark mode toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Dark Mode", fontWeight = FontWeight.Medium)
+                    Switch(
+                        checked = darkTheme,
+                        onCheckedChange = { darkTheme = it },
+                    )
+                }
+
+                HorizontalDivider(color = DayPlanTheme.divider)
+
+                // Timeline hours
+                Text("Timeline Hours", fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Start:", modifier = Modifier.width(60.dp))
+                    OutlinedTextField(
+                        value = startHour,
+                        onValueChange = { startHour = it.filter { c -> c.isDigit() } },
+                        modifier = Modifier.width(64.dp),
+                        singleLine = true,
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("End:", modifier = Modifier.width(60.dp))
+                    OutlinedTextField(
+                        value = endHour,
+                        onValueChange = { endHour = it.filter { c -> c.isDigit() } },
+                        modifier = Modifier.width(64.dp),
+                        singleLine = true,
+                    )
+                }
+
+                // Default task duration
+                Text("Default Task Duration", fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = defaultDuration,
+                        onValueChange = { defaultDuration = it.filter { c -> c.isDigit() } },
+                        label = { Text("Minutes") },
+                        modifier = Modifier.width(100.dp),
+                        singleLine = true,
+                    )
+                }
+
+                // Default reminder
+                Text("Default Reminder", fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = defaultReminder,
+                        onValueChange = { defaultReminder = it.filter { c -> c.isDigit() } },
+                        label = { Text("Minutes before end") },
+                        modifier = Modifier.width(140.dp),
+                        singleLine = true,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        settings.copy(
+                            darkTheme = darkTheme,
+                            startHour = startHour.toIntOrNull()?.coerceIn(0, 23) ?: 6,
+                            endHour = endHour.toIntOrNull()?.coerceIn(1, 24) ?: 23,
+                            defaultDuration = defaultDuration.toIntOrNull()?.coerceIn(5, 480) ?: 30,
+                            defaultReminder = defaultReminder.toIntOrNull()?.coerceIn(0, 60) ?: 5,
+                        )
+                    )
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

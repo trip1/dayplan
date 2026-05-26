@@ -67,6 +67,7 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
                     date = row.date,
                     startMinute = row.startMinute.toInt(),
                     isCompleted = row.isCompleted == 1L,
+                    reminderMinutes = row.reminderMinutes.toInt(),
                     groupName = row.group_name,
                     groupColorHex = row.group_color_hex,
                 )
@@ -84,6 +85,7 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
                 date = row.date,
                 startMinute = row.startMinute.toInt(),
                 isCompleted = row.isCompleted == 1L,
+                reminderMinutes = row.reminderMinutes.toInt(),
                 groupName = row.group_name,
                 groupColorHex = row.group_color_hex,
             )
@@ -100,6 +102,7 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
             date = row.date,
             startMinute = row.startMinute.toInt(),
             isCompleted = row.isCompleted == 1L,
+            reminderMinutes = row.reminderMinutes.toInt(),
             groupName = row.group_name,
             groupColorHex = row.group_color_hex,
         )
@@ -109,7 +112,8 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
         q.insertTask(
             task.name, task.description, task.durationMinutes.toLong(),
             task.groupId, task.date, task.startMinute.toLong(),
-            if (task.isCompleted) 1L else 0L
+            if (task.isCompleted) 1L else 0L,
+            task.reminderMinutes.toLong()
         )
     }
 
@@ -118,6 +122,7 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
             task.name, task.description, task.durationMinutes.toLong(),
             task.groupId, task.date, task.startMinute.toLong(),
             if (task.isCompleted) 1L else 0L,
+            task.reminderMinutes.toLong(),
             task.id
         )
     }

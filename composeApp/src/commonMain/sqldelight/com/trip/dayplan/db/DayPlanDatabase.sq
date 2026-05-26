@@ -1,4 +1,5 @@
 -- DayPlan Database Schema
+-- Schema version: 2 (added reminderMinutes to Task)
 
 CREATE TABLE IF NOT EXISTS TaskGroup (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,6 +17,7 @@ CREATE TABLE IF NOT EXISTS Task (
     date TEXT NOT NULL,
     startMinute INTEGER NOT NULL DEFAULT 0,
     isCompleted INTEGER NOT NULL DEFAULT 0,
+    reminderMinutes INTEGER NOT NULL DEFAULT 5,
     FOREIGN KEY (groupId) REFERENCES TaskGroup(id) ON DELETE SET NULL
 );
 
@@ -38,19 +40,19 @@ deleteGroup:
 DELETE FROM TaskGroup WHERE id = :id;
 
 getTasksForDate:
-SELECT t.id, t.name, t.description, t.durationMinutes, t.groupId, t.date, t.startMinute, t.isCompleted, g.name AS group_name, g.colorHex AS group_color_hex
+SELECT t.id, t.name, t.description, t.durationMinutes, t.groupId, t.date, t.startMinute, t.isCompleted, t.reminderMinutes, g.name AS group_name, g.colorHex AS group_color_hex
 FROM Task t
 LEFT JOIN TaskGroup g ON t.groupId = g.id
 WHERE t.date = :date
 ORDER BY t.startMinute;
 
 insertTask:
-INSERT INTO Task (name, description, durationMinutes, groupId, date, startMinute, isCompleted)
-VALUES (:name, :description, :durationMinutes, :groupId, :date, :startMinute, :isCompleted);
+INSERT INTO Task (name, description, durationMinutes, groupId, date, startMinute, isCompleted, reminderMinutes)
+VALUES (:name, :description, :durationMinutes, :groupId, :date, :startMinute, :isCompleted, :reminderMinutes);
 
 updateTask:
 UPDATE Task SET name = :name, description = :description, durationMinutes = :durationMinutes,
-    groupId = :groupId, date = :date, startMinute = :startMinute, isCompleted = :isCompleted
+    groupId = :groupId, date = :date, startMinute = :startMinute, isCompleted = :isCompleted, reminderMinutes = :reminderMinutes
 WHERE id = :id;
 
 deleteTask:
@@ -60,7 +62,7 @@ markTaskComplete:
 UPDATE Task SET isCompleted = 1 WHERE id = :id;
 
 getTaskById:
-SELECT t.id, t.name, t.description, t.durationMinutes, t.groupId, t.date, t.startMinute, t.isCompleted, g.name AS group_name, g.colorHex AS group_color_hex
+SELECT t.id, t.name, t.description, t.durationMinutes, t.groupId, t.date, t.startMinute, t.isCompleted, t.reminderMinutes, g.name AS group_name, g.colorHex AS group_color_hex
 FROM Task t
 LEFT JOIN TaskGroup g ON t.groupId = g.id
 WHERE t.id = :id;

@@ -2,6 +2,7 @@ package com.trip.dayplan.di
 
 import com.trip.dayplan.data.DatabaseDriverFactory
 import com.trip.dayplan.data.DayPlanRepository
+import com.trip.dayplan.data.SettingsStore
 import com.trip.dayplan.db.DayPlanDatabase
 
 /**
@@ -9,8 +10,10 @@ import com.trip.dayplan.db.DayPlanDatabase
  */
 class AppDependencies(
     databaseDriverFactory: DatabaseDriverFactory,
+    settingsStoreFactory: () -> SettingsStore,
 ) {
     val driver = databaseDriverFactory.createDriver()
     val db = DayPlanDatabase(driver)
     val repository = DayPlanRepository(db)
+    val settingsStore = settingsStoreFactory()
 }

@@ -20,6 +20,7 @@ data class DayTask(
     val date: String = "",       // ISO date string (yyyy-MM-dd)
     val startMinute: Int = 0,    // minutes since midnight (0-1435)
     val isCompleted: Boolean = false,
+    val reminderMinutes: Int = 5, // minutes before task end to remind (0 = disabled)
     val groupName: String? = null,
     val groupColorHex: String? = null,
 ) {
@@ -45,6 +46,18 @@ data class TaskGroup(
     val name: String = "",
     val colorHex: String = "#4A6741",
     val sortOrder: Int = 0,
+)
+
+/**
+ * App-wide user settings, persisted across launches.
+ */
+data class AppSettings(
+    val darkTheme: Boolean = false,
+    val startHour: Int = 6,       // Timeline starts at this hour
+    val endHour: Int = 23,        // Timeline ends at this hour
+    val defaultDuration: Int = 30, // Default task duration in minutes
+    val defaultReminder: Int = 5,  // Default reminder minutes before end
+    val lastViewedDate: String? = null,
 )
 
 /**
