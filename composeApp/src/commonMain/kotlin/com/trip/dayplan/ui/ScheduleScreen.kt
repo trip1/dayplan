@@ -412,14 +412,9 @@ private fun DateHeader(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = formatted,
-                fontSize = 18.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = DayPlanTheme.textPrimary,
-            )
-            Text(
-                text = "Tap a task to edit · Long press to complete · Swipe left to delete",
-                fontSize = 11.sp,
-                color = DayPlanTheme.textSecondary,
             )
         }
         Row {
@@ -452,6 +447,7 @@ private fun TimelineView(
     val density = LocalDensity.current
     val pixelsPerMinute = with(density) { PIXELS_PER_MINUTE.dp.toPx() }
     val totalWidth = TOTAL_MINUTES * pixelsPerMinute
+    val scrollState = rememberScrollState()
 
     // Current time ticker
     val currentMinute by produceState(initialValue = 0f) {
@@ -468,8 +464,8 @@ private fun TimelineView(
         // Time labels row
         Row(
             modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .width((totalWidth + 60).dp) // +60 for time label gutter
+                .horizontalScroll(scrollState)
+                .width((totalWidth + 60).dp)
                 .padding(start = 60.dp),
         ) {
             for (hour in START_HOUR..END_HOUR) {
@@ -492,7 +488,7 @@ private fun TimelineView(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(scrollState)
                 .padding(start = 60.dp),
         ) {
             // Track background with hour grid lines
@@ -525,7 +521,7 @@ private fun TimelineView(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(scrollState)
                 .padding(start = 60.dp),
         ) {
             Box(
