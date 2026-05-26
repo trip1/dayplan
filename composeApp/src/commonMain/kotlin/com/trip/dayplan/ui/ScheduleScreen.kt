@@ -1,0 +1,670 @@
+package com.trip.dayplan.ui
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.trip.dayplan.domain.DayTask
+import com.trip.dayplan.domain.TaskGroup
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+
+/**
+ * Parse a hex color string (#RRGGBB or #RGB) into a Compose Color.
+ */
+private fun parseHexColor(hex: String): Color {
+    val cleaned = hex.removePrefix("#")
+    return when (cleaned.length) {
+        3 -> {
+            val r = cleaned[0].toString().repeat(2).toInt(16)
+            val g = cleaned[1].toString().repeat(2).toInt(16)
+            val b = cleaned[2].toString().repeat(2).toInt(16)
+            Color(r, g, b)
+        }
+        6 -> {
+            val r = cleaned.substring(0, 2).toInt(16)
+            val g = cleaned.substring(2, 4).toInt(16)
+            val b = cleaned.substring(4, 6).toInt(16)
+            Color(r, g, b)
+        }
+        8 -> {
+            val a = cleaned.substring(0, 2).toInt(16)
+            val r = cleaned.substring(2, 4).toInt(16)
+            val g = cleaned.substring(4, 6).toInt(16)
+            val b = cleaned.substring(6, 8).toInt(16)
+            Color(r, g, b, a)
+        }
+        else -> Color.Gray
+    }
+}
+
+// Constants
+private const val START_HOUR = 6
+private const val END_HOUR = 23
+private const val TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60
+private const val PIXELS_PER_MINUTE = 1.5f
+
+@Composable
+fun App(viewModel: ScheduleViewModel) {
+    val state by viewModel.state.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    DayPlanAppTheme {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = DayPlanTheme.background,
+        ) {
+            Column {
+                // Top bar
+                DateHeader(
+                    date = state.date,
+                    onPrevDay = { /* TODO: date navigation */ },
+                    onNextDay = { /* TODO: date navigation */ },
+                )
+
+                // Timeline
+                TimelineView(
+                    tasks = state.tasks,
+                    groups = state.groups,
+                    onAddTask = { viewModel.showAddTaskDialog() },
+                    onTaskClick = { viewModel.showEditTask(it) },
+                    onTaskLongPress = { task ->
+                        scope.launch {
+                            viewModel.toggleTaskComplete(task)
+                        }
+                    },
+                    onTaskDrag = { task, newMinute ->
+                        scope.launch {
+                            val clamped = newMinute.coerceIn(START_HOUR * 60, END_HOUR * 60 - 5)
+                            viewModel.moveTask(task, clamped)
+                        }
+                    },
+                )
+            }
+
+            // Dialogs
+            if (state.showAddTaskDialog) {
+                AddTaskDialog(
+                    editingTask = state.editingTask,
+                    groups = state.groups,
+                    onDismiss = { viewModel.dismissAddTaskDialog() },
+                    onSave = { task ->
+                        scope.launch {
+                            viewModel.saveTask(task)
+                            viewModel.dismissAddTaskDialog()
+                        }
+                    },
+                    onDelete = { id ->
+                        scope.launch {
+                            viewModel.deleteTask(id)
+                            viewModel.dismissAddTaskDialog()
+                        }
+                    },
+                )
+            }
+
+            if (state.showAddGroupDialog) {
+                AddGroupDialog(
+                    onDismiss = { viewModel.dismissAddGroupDialog() },
+                    onSave = { group ->
+                        scope.launch {
+                            viewModel.saveGroup(group)
+                            viewModel.dismissAddGroupDialog()
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DateHeader(
+    date: String,
+    onPrevDay: () -> Unit,
+    onNextDay: () -> Unit,
+) {
+    val parsed = kotlin.runCatching {
+        kotlinx.datetime.LocalDate.parse(date)
+    }.getOrNull()
+
+    val formatted = parsed?.let {
+        val dayName = when (it.dayOfWeek) {
+            kotlinx.datetime.DayOfWeek.MONDAY -> "Monday"
+            kotlinx.datetime.DayOfWeek.TUESDAY -> "Tuesday"
+            kotlinx.datetime.DayOfWeek.WEDNESDAY -> "Wednesday"
+            kotlinx.datetime.DayOfWeek.THURSDAY -> "Thursday"
+            kotlinx.datetime.DayOfWeek.FRIDAY -> "Friday"
+            kotlinx.datetime.DayOfWeek.SATURDAY -> "Saturday"
+            kotlinx.datetime.DayOfWeek.SUNDAY -> "Sunday"
+            else -> ""
+        }
+        val monthName = when (it.monthNumber) {
+            1 -> "January"; 2 -> "February"; 3 -> "March"; 4 -> "April"
+            5 -> "May"; 6 -> "June"; 7 -> "July"; 8 -> "August"
+            9 -> "September"; 10 -> "October"; 11 -> "November"; 12 -> "December"
+            else -> ""
+        }
+        "$dayName, $monthName ${it.dayOfMonth}"
+    } ?: date
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onPrevDay) {
+            Icon(Icons.Default.ArrowBack, "Previous day", tint = DayPlanTheme.textSecondary)
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = formatted,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = DayPlanTheme.textPrimary,
+            )
+            Text(
+                text = "Tap a task to edit · Long press to complete",
+                fontSize = 11.sp,
+                color = DayPlanTheme.textSecondary,
+            )
+        }
+        IconButton(onClick = onNextDay) {
+            Icon(Icons.Default.ArrowForward, "Next day", tint = DayPlanTheme.textSecondary)
+        }
+    }
+    Divider(color = DayPlanTheme.divider)
+}
+
+@Composable
+private fun TimelineView(
+    tasks: List<DayTask>,
+    groups: List<TaskGroup>,
+    onAddTask: () -> Unit,
+    onTaskClick: (DayTask) -> Unit,
+    onTaskLongPress: (DayTask) -> Unit,
+    onTaskDrag: (DayTask, Int) -> Unit,
+) {
+    val density = LocalDensity.current
+    val pixelsPerMinute = with(density) { PIXELS_PER_MINUTE.dp.toPx() }
+
+    // Current time ticker
+    val currentMinute by produceState(initialValue = 0f) {
+        while (true) {
+            val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+            value = (now.hour * 60f + now.minute)
+            delay(60_000)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    // Tap on empty space → add task at that time
+                    val minute = (offset.y / pixelsPerMinute).toInt() + START_HOUR * 60
+                    if (minute in START_HOUR * 60 until END_HOUR * 60) {
+                        // Could open add dialog with pre-filled time
+                    }
+                }
+            },
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Time labels + track
+            Row(modifier = Modifier.fillMaxWidth()) {
+                // Time labels column
+                Column(modifier = Modifier.width(56.dp)) {
+                    for (hour in START_HOUR..END_HOUR) {
+                        Box(
+                            modifier = Modifier
+                                .height((60 * PIXELS_PER_MINUTE).dp)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.TopEnd,
+                        ) {
+                            Text(
+                                text = formatHour(hour),
+                                fontSize = 11.sp,
+                                color = DayPlanTheme.textSecondary,
+                                modifier = Modifier.padding(end = 8.dp, top = 2.dp),
+                            )
+                        }
+                    }
+                }
+
+                // Timeline track
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .height((TOTAL_MINUTES * PIXELS_PER_MINUTE).dp)
+                        .background(DayPlanTheme.background),
+                ) {
+                    // Hour lines
+                    for (hour in START_HOUR..END_HOUR) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .offset(y = ((hour - START_HOUR) * 60 * PIXELS_PER_MINUTE).dp),
+                        ) {
+                            drawLine(
+                                color = DayPlanTheme.divider,
+                                start = Offset(0f, 0.5f),
+                                end = Offset(size.width, 0.5f),
+                                strokeWidth = 1f,
+                            )
+                        }
+                    }
+
+                    // Task blocks
+                    tasks.forEach { task ->
+                        TaskBlock(
+                            task = task,
+                            pixelsPerMinute = pixelsPerMinute,
+                            onClick = { onTaskClick(task) },
+                            onLongPress = { onTaskLongPress(task) },
+                            onDrag = { dy ->
+                                val deltaMinutes = (dy / pixelsPerMinute).toInt()
+                                val newMinute = task.startMinute + deltaMinutes
+                                if (newMinute in START_HOUR * 60 until END_HOUR * 60) {
+                                    onTaskDrag(task, newMinute)
+                                }
+                            },
+                        )
+                    }
+
+                    // Now indicator
+                    val nowY = ((currentMinute - START_HOUR * 60) * PIXELS_PER_MINUTE).dp
+                    if (currentMinute >= START_HOUR * 60 && currentMinute <= END_HOUR * 60) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .offset(y = nowY),
+                        ) {
+                            drawLine(
+                                color = DayPlanTheme.nowIndicator,
+                                start = Offset(0f, 1f),
+                                end = Offset(size.width, 1f),
+                                strokeWidth = 2f,
+                            )
+                        }
+                        // Now dot
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .offset(y = nowY - 5.dp)
+                                .align(Alignment.CenterStart),
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                drawCircle(
+                                    color = DayPlanTheme.nowIndicator,
+                                    radius = size.minDimension / 2,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // FAB
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.BottomEnd,
+    ) {
+        FloatingActionButton(
+            onClick = onAddTask,
+            containerColor = DayPlanTheme.primary,
+            contentColor = Color.White,
+        ) {
+            Icon(Icons.Default.Add, "Add task")
+        }
+    }
+}
+
+@Composable
+private fun TaskBlock(
+    task: DayTask,
+    pixelsPerMinute: Float,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    onDrag: (Float) -> Unit,
+) {
+    val blockTop = ((task.startMinute - START_HOUR * 60) * pixelsPerMinute).dp
+    val blockHeight = (task.durationMinutes * pixelsPerMinute).dp.coerceAtLeast(28.dp)
+    val taskColor = try { parseHexColor(task.colorHex) } catch (e: Exception) { DayPlanTheme.primary }
+
+    val isCompleted = task.isCompleted
+
+    Box(
+        modifier = Modifier
+            .offset(y = blockTop)
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+            .fillMaxWidth()
+            .height(blockHeight)
+            .background(
+                color = if (isCompleted) taskColor.copy(alpha = 0.3f) else taskColor.copy(alpha = 0.85f),
+                shape = RoundedCornerShape(6.dp),
+            )
+            .clickable(onClick = onClick)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = { onLongPress() },
+                    onTap = { onClick() },
+                )
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragEnd = { /* drag handled in parent */ },
+                ) { change, dragAmount ->
+                    change.consume()
+                    onDrag(dragAmount.y)
+                }
+            },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isCompleted) {
+                Icon(
+                    Icons.Default.Check,
+                    "Completed",
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = task.name,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (blockHeight > 36.dp) {
+                    Text(
+                        text = "${formatTime(task.startTime)} – ${formatTime(task.endTime)}",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.8f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddTaskDialog(
+    editingTask: DayTask?,
+    groups: List<TaskGroup>,
+    onDismiss: () -> Unit,
+    onSave: (DayTask) -> Unit,
+    onDelete: (Long) -> Unit,
+) {
+    var name by remember { mutableStateOf(editingTask?.name ?: "") }
+    var description by remember { mutableStateOf(editingTask?.description ?: "") }
+    var duration by remember { mutableStateOf((editingTask?.durationMinutes ?: 30).toString()) }
+    var startHour by remember { mutableStateOf(editingTask?.startMinute?.div(60) ?: 9) }
+    var startMin by remember { mutableStateOf(editingTask?.startMinute?.rem(60) ?: 0) }
+    var selectedGroupId by remember { mutableStateOf<Long?>(editingTask?.groupId) }
+
+    val date = ScheduleUiState.today()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (editingTask == null) "New Task" else "Edit Task") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Task name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Notes (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 2,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = duration,
+                        onValueChange = { duration = it.filter { c -> c.isDigit() } },
+                        label = { Text("Minutes") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    // Start time
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = startHour.toString().padStart(2, '0'),
+                            onValueChange = { v -> startHour = v.filter { it.isDigit() }.toIntOrNull()?.coerceIn(0, 23) ?: 0 },
+                            label = { Text("Hour") },
+                            modifier = Modifier.width(72.dp),
+                            singleLine = true,
+                        )
+                        Text(":", fontSize = 18.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                        OutlinedTextField(
+                            value = startMin.toString().padStart(2, '0'),
+                            onValueChange = { v -> startMin = v.filter { it.isDigit() }.toIntOrNull()?.coerceIn(0, 59) ?: 0 },
+                            label = { Text("Min") },
+                            modifier = Modifier.width(72.dp),
+                            singleLine = true,
+                        )
+                    }
+                }
+                // Group selector
+                Text("Group", fontSize = 12.sp, color = DayPlanTheme.textSecondary)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // None option
+                    FilterChip(
+                        selected = selectedGroupId == null,
+                        onClick = { selectedGroupId = null },
+                        label = { Text("None") },
+                        leadingIcon = if (selectedGroupId == null) {
+                            { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
+                        } else null,
+                    )
+                    groups.forEach { group ->
+                        val groupColor = try { parseHexColor(group.colorHex) } catch (e: Exception) { DayPlanTheme.primary }
+                        FilterChip(
+                            selected = selectedGroupId == group.id,
+                            onClick = { selectedGroupId = group.id },
+                            label = { Text(group.name) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = groupColor.copy(alpha = 0.2f),
+                            ),
+                            leadingIcon = if (selectedGroupId == group.id) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
+                            } else {
+                                {
+                                    Box(
+                                        Modifier
+                                            .size(12.dp)
+                                            .background(groupColor, RoundedCornerShape(3.dp)),
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val durationMin = duration.toIntOrNull()?.coerceIn(5, 480) ?: 30
+                    val roundedMin = (startMin / 5) * 5 // Round to nearest 5 min
+                    val task = DayTask(
+                        id = editingTask?.id ?: 0,
+                        name = name.ifBlank { "Untitled" },
+                        description = description,
+                        durationMinutes = durationMin,
+                        groupId = selectedGroupId,
+                        date = date,
+                        startMinute = startHour * 60 + roundedMin,
+                    )
+                    onSave(task)
+                },
+                enabled = name.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            Row {
+                if (editingTask != null) {
+                    TextButton(onClick = { onDelete(editingTask.id) }) {
+                        Text("Delete", color = Color.Red)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
+}
+
+@Composable
+private fun AddGroupDialog(
+    onDismiss: () -> Unit,
+    onSave: (TaskGroup) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var selectedColor by remember { mutableStateOf("#4A6741") }
+
+    val presetColors = listOf(
+        "#4A6741", // Sage green
+        "#E8913A", // Warm orange
+        "#5B8DB8", // Steel blue
+        "#8B5CF6", // Purple
+        "#EF4444", // Red
+        "#10B981", // Emerald
+        "#F59E0B", // Amber
+        "#6366F1", // Indigo
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Group") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Group name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Text("Color", fontSize = 12.sp, color = DayPlanTheme.textSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    presetColors.forEach { color ->
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(
+                                    parseHexColor(color),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .clickable { selectedColor = color }
+                                .then(
+                                    if (selectedColor == color) {
+                                        Modifier.border(2.dp, Color.Black, RoundedCornerShape(10.dp))
+                                    } else {
+                                        Modifier
+                                    }
+                                ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        onSave(TaskGroup(name = name, colorHex = selectedColor))
+                    }
+                },
+                enabled = name.isNotBlank(),
+            ) { Text("Create") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+// Utility functions
+private fun formatHour(hour: Int): String {
+    return if (hour == 0 || hour == 24) {
+        "12 AM"
+    } else if (hour < 12) {
+        "$hour AM"
+    } else if (hour == 12) {
+        "12 PM"
+    } else {
+        "${hour - 12} PM"
+    }
+}
+
+private fun formatTime(time: kotlinx.datetime.LocalTime): String {
+    val hour = time.hour
+    val min = time.minute.toString().padStart(2, '0')
+    val suffix = if (hour < 12) "AM" else "PM"
+    val displayHour = if (hour == 0 || hour == 12) 12 else if (hour > 12) hour - 12 else hour
+    return "$displayHour:$min $suffix"
+}
