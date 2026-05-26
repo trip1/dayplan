@@ -109,7 +109,7 @@ private fun todayMillis(dateStr: String): Long {
 private const val START_HOUR = 6
 private const val END_HOUR = 23
 private const val TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60
-private const val PIXELS_PER_MINUTE = 1.5f
+private const val PIXELS_PER_MINUTE = 2f
 
 /**
  * Get tasks that will end within 5 minutes from now.
@@ -446,8 +446,6 @@ private fun TimelineView(
 ) {
     val density = LocalDensity.current
     val pixelsPerMinute = with(density) { PIXELS_PER_MINUTE.dp.toPx() }
-    val totalWidth = TOTAL_MINUTES * pixelsPerMinute
-    val scrollState = rememberScrollState()
 
     // Current time ticker
     val currentMinute by produceState(initialValue = 0f) {
@@ -459,121 +457,138 @@ private fun TimelineView(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val minute = (offset.y / pixelsPerMinute).toInt() + START_HOUR * 60
+                    if (minute in START_HOUR * 60 until END_HOUR * 60) {
+                        onEmptyTap(minute)
+                    }
+                }
+            },
     ) {
-        // Time labels row
-        Row(
-            modifier = Modifier
-                .horizontalScroll(scrollState)
-                .width((totalWidth + 60).dp)
-                .padding(start = 60.dp),
-        ) {
-            for (hour in START_HOUR..END_HOUR) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Time labels + track
+            Row(modifier = Modifier.fillMaxWidth()) {
+                // Time labels column
+                Column(modifier = Modifier.width(48.dp)) {
+                    for (minute in 0 until TOTAL_MINUTES step 5) {
+                        val absMinute = START_HOUR * 60 + minute
+                        val hour = absMinute / 60
+                        val min = absMinute % 60
+                        val label = if (min == 0) {
+                            formatHour(hour)
+                        } else {
+                            "%02d".format(min)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .height((5 * PIXELS_PER_MINUTE).dp)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.TopEnd,
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = if (min == 0) 11.sp else 9.sp,
+                                fontWeight = if (min == 0) FontWeight.Medium else FontWeight.Normal,
+                                color = if (min == 0) DayPlanTheme.textSecondary else DayPlanTheme.textSecondary.copy(alpha = 0.5f),
+                                modifier = Modifier.padding(end = 4.dp, top = 1.dp),
+                            )
+                        }
+                    }
+                }
+
+                // Timeline track
                 Box(
                     modifier = Modifier
-                        .width((60 * pixelsPerMinute).dp)
-                        .height(24.dp),
-                    contentAlignment = Alignment.TopCenter,
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .height((TOTAL_MINUTES * PIXELS_PER_MINUTE).dp)
+                        .background(DayPlanTheme.background),
                 ) {
-                    Text(
-                        text = formatHour(hour),
-                        fontSize = 11.sp,
-                        color = DayPlanTheme.textSecondary,
-                    )
-                }
-            }
-        }
-
-        // Horizontal timeline track
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .horizontalScroll(scrollState)
-                .padding(start = 60.dp),
-        ) {
-            // Track background with hour grid lines
-            Box(
-                modifier = Modifier
-                    .width(totalWidth.dp)
-                    .fillMaxHeight()
-                    .background(DayPlanTheme.background),
-            ) {
-                // Vertical hour lines
-                for (hour in START_HOUR..END_HOUR) {
-                    Canvas(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .fillMaxHeight()
-                            .offset(x = ((hour - START_HOUR) * 60 * pixelsPerMinute).dp),
-                    ) {
-                        drawLine(
-                            color = DayPlanTheme.divider,
-                            start = Offset(0.5f, 0f),
-                            end = Offset(0.5f, size.height),
-                            strokeWidth = 1f,
-                        )
-                    }
-                }
-            }
-        }
-
-        // Task blocks overlay (scrolls with track)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .horizontalScroll(scrollState)
-                .padding(start = 60.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(totalWidth.dp)
-                    .fillMaxHeight(),
-            ) {
-                tasks.forEach { task ->
-                    HorizontalTaskBlock(
-                        task = task,
-                        pixelsPerMinute = pixelsPerMinute,
-                        onClick = { onTaskClick(task) },
-                        onLongPress = { onTaskLongPress(task) },
-                        onDrag = { dx ->
-                            val deltaMinutes = (dx / pixelsPerMinute).toInt()
-                            val newMinute = task.startMinute + deltaMinutes
-                            if (newMinute in START_HOUR * 60 until END_HOUR * 60) {
-                                onTaskDrag(task, newMinute)
-                            }
-                        },
-                        onSwipeDelete = { onSwipeDelete(task) },
-                    )
-                }
-
-                // Now indicator (vertical line)
-                val nowX = ((currentMinute - START_HOUR * 60) * pixelsPerMinute).dp
-                if (currentMinute >= START_HOUR * 60 && currentMinute <= END_HOUR * 60) {
-                    Canvas(
-                        modifier = Modifier
-                            .width(2.dp)
-                            .fillMaxHeight()
-                            .offset(x = nowX),
-                    ) {
-                        drawLine(
-                            color = DayPlanTheme.nowIndicator,
-                            start = Offset(1f, 0f),
-                            end = Offset(1f, size.height),
-                            strokeWidth = 2f,
-                        )
-                    }
-                    // Now dot at top
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .offset(x = nowX - 5.dp)
-                            .align(Alignment.TopCenter),
-                    ) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            drawCircle(
-                                color = DayPlanTheme.nowIndicator,
-                                radius = size.minDimension / 2,
+                    // 5-minute slot lines (subtle)
+                    for (minute in 0 until TOTAL_MINUTES step 5) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .offset(y = (minute * PIXELS_PER_MINUTE).dp),
+                        ) {
+                            drawLine(
+                                color = DayPlanTheme.divider.copy(alpha = 0.4f),
+                                start = Offset(0f, 0.5f),
+                                end = Offset(size.width, 0.5f),
+                                strokeWidth = 1f,
                             )
+                        }
+                    }
+
+                    // Hour lines (stronger)
+                    for (hour in START_HOUR..END_HOUR) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .offset(y = ((hour - START_HOUR) * 60 * PIXELS_PER_MINUTE).dp),
+                        ) {
+                            drawLine(
+                                color = DayPlanTheme.divider,
+                                start = Offset(0f, 0.5f),
+                                end = Offset(size.width, 0.5f),
+                                strokeWidth = 1f,
+                            )
+                        }
+                    }
+
+                    // Task blocks
+                    tasks.forEach { task ->
+                        TaskBlock(
+                            task = task,
+                            pixelsPerMinute = pixelsPerMinute,
+                            onClick = { onTaskClick(task) },
+                            onLongPress = { onTaskLongPress(task) },
+                            onDrag = { dy ->
+                                val deltaMinutes = (dy / pixelsPerMinute).toInt()
+                                val newMinute = task.startMinute + deltaMinutes
+                                if (newMinute in START_HOUR * 60 until END_HOUR * 60) {
+                                    onTaskDrag(task, newMinute)
+                                }
+                            },
+                            onSwipeDelete = { onSwipeDelete(task) },
+                        )
+                    }
+
+                    // Now indicator
+                    val nowY = ((currentMinute - START_HOUR * 60) * PIXELS_PER_MINUTE).dp
+                    if (currentMinute >= START_HOUR * 60 && currentMinute <= END_HOUR * 60) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .offset(y = nowY),
+                        ) {
+                            drawLine(
+                                color = DayPlanTheme.nowIndicator,
+                                start = Offset(0f, 1f),
+                                end = Offset(size.width, 1f),
+                                strokeWidth = 2f,
+                            )
+                        }
+                        // Now dot
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .offset(y = nowY - 5.dp)
+                                .align(Alignment.CenterStart),
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                drawCircle(
+                                    color = DayPlanTheme.nowIndicator,
+                                    radius = size.minDimension / 2,
+                                )
+                            }
                         }
                     }
                 }
@@ -599,7 +614,7 @@ private fun TimelineView(
 }
 
 @Composable
-private fun HorizontalTaskBlock(
+private fun TaskBlock(
     task: DayTask,
     pixelsPerMinute: Float,
     onClick: () -> Unit,
@@ -607,41 +622,41 @@ private fun HorizontalTaskBlock(
     onDrag: (Float) -> Unit,
     onSwipeDelete: () -> Unit = {},
 ) {
-    val blockLeft = ((task.startMinute - START_HOUR * 60) * pixelsPerMinute).dp
-    val blockWidth = (task.durationMinutes * pixelsPerMinute).dp.coerceAtLeast(60.dp)
+    val blockTop = ((task.startMinute - START_HOUR * 60) * pixelsPerMinute).dp
+    val blockHeight = (task.durationMinutes * pixelsPerMinute).dp.coerceAtLeast(28.dp)
     val taskColor = try { parseHexColor(task.colorHex) } catch (e: Exception) { DayPlanTheme.primary }
 
     val isCompleted = task.isCompleted
 
-    // Swipe state (vertical swipe down to delete)
-    var swipeOffsetY by remember { mutableFloatStateOf(0f) }
-    val swipeThreshold = 40f
+    // Swipe state
+    var swipeOffsetX by remember { mutableFloatStateOf(0f) }
+    val swipeThreshold = 60f
 
     Box(
         modifier = Modifier
-            .offset(x = blockLeft)
-            .padding(horizontal = 2.dp, vertical = 8.dp)
-            .width(blockWidth)
-            .height(56.dp)
+            .offset(y = blockTop)
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+            .fillMaxWidth()
+            .height(blockHeight)
             .background(
                 color = if (isCompleted) taskColor.copy(alpha = 0.3f) else taskColor.copy(alpha = 0.85f),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(6.dp),
             )
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragEnd = {
-                        if (swipeOffsetY > swipeThreshold) {
+                        if (swipeOffsetX < -swipeThreshold) {
                             onSwipeDelete()
                         }
-                        swipeOffsetY = 0f
+                        swipeOffsetX = 0f
                     },
                 ) { change, dragAmount ->
                     change.consume()
-                    if (abs(dragAmount.y) > abs(dragAmount.x)) {
-                        swipeOffsetY += dragAmount.y
-                        swipeOffsetY = swipeOffsetY.coerceAtLeast(0f)
+                    if (abs(dragAmount.x) > abs(dragAmount.y)) {
+                        swipeOffsetX += dragAmount.x
+                        swipeOffsetX = swipeOffsetX.coerceAtMost(0f)
                     } else {
-                        onDrag(dragAmount.x)
+                        onDrag(dragAmount.y)
                     }
                 }
             }
@@ -653,19 +668,19 @@ private fun HorizontalTaskBlock(
                 )
             },
     ) {
-        // Delete indicator (red background revealed on swipe down)
-        if (swipeOffsetY > 0) {
+        // Delete indicator (red background revealed on swipe)
+        if (swipeOffsetX < 0) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(Color(0xFFE53E3E), RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center,
+                    .background(Color(0xFFE53E3E), RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.CenterEnd,
             ) {
                 Icon(
-                    androidx.compose.material.icons.Icons.Default.Delete,
+                    Icons.Default.Delete,
                     "Delete",
                     tint = Color.White,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.padding(end = 12.dp).size(18.dp),
                 )
             }
         }
@@ -673,8 +688,8 @@ private fun HorizontalTaskBlock(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .offset(y = swipeOffsetY.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+                .offset(x = swipeOffsetX.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isCompleted) {
@@ -689,19 +704,19 @@ private fun HorizontalTaskBlock(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = task.name,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = "${formatTime(task.startTime)} – ${formatTime(task.endTime)}",
-                    fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (blockHeight > 36.dp) {
+                    Text(
+                        text = "${formatTime(task.startTime)} – ${formatTime(task.endTime)}",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.8f),
+                    )
+                }
             }
         }
     }
