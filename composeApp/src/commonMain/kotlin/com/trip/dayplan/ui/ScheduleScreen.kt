@@ -50,7 +50,9 @@ import com.trip.dayplan.domain.TaskGroup
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 
 /**
@@ -82,11 +84,36 @@ private fun parseHexColor(hex: String): Color {
     }
 }
 
+/**
+ * Convert a date string (YYYY-MM-DD) to epoch milliseconds at midnight UTC.
+ */
+private fun todayMillis(dateStr: String): Long {
+    val parts = dateStr.split("-")
+    val year = parts[0].toInt()
+    val month = parts[1].toInt()
+    val day = parts[2].toInt()
+    return kotlinx.datetime.LocalDateTime(year, month, day, 0, 0)
+        .toInstant(kotlinx.datetime.TimeZone.UTC)
+        .toEpochMilliseconds()
+}
+
 // Constants
 private const val START_HOUR = 6
 private const val END_HOUR = 23
 private const val TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60
 private const val PIXELS_PER_MINUTE = 1.5f
+
+/**
+ * Get tasks that will end within 5 minutes from now.
+ */
+private fun getExpiringTasks(tasks: List<DayTask>, nowMinute: Int): List<DayTask> {
+    return tasks.filter { task ->
+        if (task.isCompleted) return@filter false
+        val endMinute = task.startMinute + task.durationMinutes
+        val timeLeft = endMinute - nowMinute
+        timeLeft in 1..5
+    }
+}
 
 @Composable
 private fun NotificationTicker(viewModel: ScheduleViewModel) {
@@ -100,7 +127,7 @@ private fun NotificationTicker(viewModel: ScheduleViewModel) {
     }
 
     val nextTask = viewModel.getNextTask()
-    val endingTasks = getTasksExpiringSoon(state.tasks, nowMinute)
+    val endingTasks = getExpiringTasks(state.tasks, nowMinute)
 
     if (nextTask == null && endingTasks.isEmpty()) return
 
@@ -156,6 +183,31 @@ private fun NotificationTicker(viewModel: ScheduleViewModel) {
 fun App(viewModel: ScheduleViewModel) {
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
+
+    // Schedule notifications for today's tasks
+    LaunchedEffect(state.tasks) {
+        NotificationManager.cancelAllNotifications()
+        state.tasks.forEach { task ->
+            if (!task.isCompleted) {
+                // 5-min before task ends
+                val endMinute = task.startMinute + task.durationMinutes
+                if (endMinute - 5 >= 0) {
+                    NotificationManager.scheduleTaskReminder(
+                        task.name,
+                        minutesBefore = 5,
+                        timestampMillis = todayMillis(task.date) + endMinute * 60_000L - 5 * 60_000L,
+                    )
+                }
+            }
+        }
+        // Next task notification
+        viewModel.getNextTask()?.let { next ->
+            NotificationManager.scheduleNextTaskNotification(
+                next.name,
+                timestampMillis = todayMillis(next.date) + next.startMinute * 60_000L,
+            )
+        }
+    }
 
     DayPlanAppTheme {
         Surface(
