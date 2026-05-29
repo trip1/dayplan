@@ -179,7 +179,7 @@ private fun NotificationTicker(viewModel: ScheduleViewModel) {
                         text = "Ending: ${task.name} · ${task.durationMinutes - (nowMinute - task.startMinute)}m left",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFFE53E3E),
+                        color = Color(0xFFFF6B6B),
                     )
                 }
             }
@@ -473,7 +473,7 @@ private fun TimelineView(
             // Time labels + track
             Row(modifier = Modifier.fillMaxWidth()) {
                 // Time labels column
-                Column(modifier = Modifier.width(48.dp)) {
+                Column(modifier = Modifier.width(56.dp)) {
                     for (minute in 0 until TOTAL_MINUTES step 5) {
                         val absMinute = START_HOUR * 60 + minute
                         val hour = absMinute / 60
@@ -491,10 +491,10 @@ private fun TimelineView(
                         ) {
                             Text(
                                 text = label,
-                                fontSize = if (min == 0) 11.sp else 9.sp,
-                                fontWeight = if (min == 0) FontWeight.Medium else FontWeight.Normal,
-                                color = if (min == 0) DayPlanTheme.textSecondary else DayPlanTheme.textSecondary.copy(alpha = 0.5f),
-                                modifier = Modifier.padding(end = 4.dp, top = 1.dp),
+                                fontSize = if (min == 0) 13.sp else 11.sp,
+                                fontWeight = if (min == 0) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (min == 0) DayPlanTheme.textSecondary else DayPlanTheme.textSecondary.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(end = 6.dp, top = 1.dp),
                             )
                         }
                     }
@@ -673,7 +673,7 @@ private fun TaskBlock(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(Color(0xFFE53E3E), RoundedCornerShape(6.dp)),
+                    .background(Color(0xFFFF6B6B), RoundedCornerShape(6.dp)),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Icon(
@@ -745,7 +745,7 @@ private fun AddTaskDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (editingTask == null) "New Task" else "Edit Task") },
+        title = { Text(if (editingTask == null) "New Task" else "Edit Task", color = DayPlanTheme.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -754,6 +754,7 @@ private fun AddTaskDialog(
                     label = { Text("Task name") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                 )
                 OutlinedTextField(
                     value = description,
@@ -761,6 +762,7 @@ private fun AddTaskDialog(
                     label = { Text("Notes (optional)") },
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 2,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -769,6 +771,7 @@ private fun AddTaskDialog(
                         label = { Text("Minutes") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     // Start time
@@ -779,14 +782,16 @@ private fun AddTaskDialog(
                             label = { Text("Hour") },
                             modifier = Modifier.width(72.dp),
                             singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                         )
-                        Text(":", fontSize = 18.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                        Text(":", fontSize = 18.sp, color = DayPlanTheme.textSecondary, modifier = Modifier.padding(horizontal = 4.dp))
                         OutlinedTextField(
                             value = startMin.toString().padStart(2, '0'),
                             onValueChange = { v -> startMin = v.filter { it.isDigit() }.toIntOrNull()?.coerceIn(0, 59) ?: 0 },
                             label = { Text("Min") },
                             modifier = Modifier.width(72.dp),
                             singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                         )
                     }
                 }
@@ -799,6 +804,10 @@ private fun AddTaskDialog(
                             selected = reminderMinutes == mins,
                             onClick = { reminderMinutes = mins },
                             label = { Text(if (mins == 0) "Off" else "${mins}m", fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = DayPlanTheme.primary,
+                                selectedLabelColor = Color.White,
+                            ),
                             modifier = Modifier.padding(end = 4.dp),
                         )
                     }
@@ -816,6 +825,10 @@ private fun AddTaskDialog(
                         selected = selectedGroupId == null,
                         onClick = { selectedGroupId = null },
                         label = { Text("None") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = DayPlanTheme.textSecondary.copy(alpha = 0.2f),
+                            selectedLabelColor = DayPlanTheme.textPrimary,
+                        ),
                         leadingIcon = if (selectedGroupId == null) {
                             { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
                         } else null,
@@ -828,6 +841,7 @@ private fun AddTaskDialog(
                             label = { Text(group.name) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = groupColor.copy(alpha = 0.2f),
+                                selectedLabelColor = groupColor,
                             ),
                             leadingIcon = if (selectedGroupId == group.id) {
                                 { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
@@ -869,10 +883,10 @@ private fun AddTaskDialog(
             Row {
                 if (editingTask != null) {
                     TextButton(onClick = { onDelete(editingTask.id) }) {
-                        Text("Delete", color = Color.Red)
+                        Text("Delete", color = Color(0xFFFF6B6B))
                     }
                 }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text("Cancel", color = DayPlanTheme.textSecondary) }
             }
         },
     )
@@ -899,7 +913,7 @@ private fun AddGroupDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Group") },
+        title = { Text("New Group", color = DayPlanTheme.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -908,6 +922,7 @@ private fun AddGroupDialog(
                     label = { Text("Group name") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                 )
                 Text("Color", fontSize = 12.sp, color = DayPlanTheme.textSecondary)
                 Row(
@@ -925,7 +940,7 @@ private fun AddGroupDialog(
                                 .clickable { selectedColor = color }
                                 .then(
                                     if (selectedColor == color) {
-                                        Modifier.border(2.dp, Color.Black, RoundedCornerShape(10.dp))
+                                        Modifier.border(2.dp, DayPlanTheme.textPrimary, RoundedCornerShape(10.dp))
                                     } else {
                                         Modifier
                                     }
@@ -986,7 +1001,7 @@ private fun SettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Settings") },
+        title = { Text("Settings", color = DayPlanTheme.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 // Dark mode toggle
@@ -995,37 +1010,45 @@ private fun SettingsDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Dark Mode", fontWeight = FontWeight.Medium)
+                    Text("Dark Mode", fontWeight = FontWeight.Medium, color = DayPlanTheme.textPrimary)
                     Switch(
                         checked = darkTheme,
                         onCheckedChange = { darkTheme = it },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = DayPlanTheme.primary,
+                            uncheckedThumbColor = DayPlanTheme.cardBorder,
+                            uncheckedTrackColor = DayPlanTheme.divider,
+                        ),
                     )
                 }
 
                 HorizontalDivider(color = DayPlanTheme.divider)
 
                 // Timeline hours
-                Text("Timeline Hours", fontWeight = FontWeight.Medium)
+                Text("Timeline Hours", fontWeight = FontWeight.Medium, color = DayPlanTheme.textPrimary)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Start:", modifier = Modifier.width(60.dp))
+                    Text("Start:", modifier = Modifier.width(60.dp), color = DayPlanTheme.textSecondary)
                     OutlinedTextField(
                         value = startHour,
                         onValueChange = { startHour = it.filter { c -> c.isDigit() } },
                         modifier = Modifier.width(64.dp),
                         singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                     )
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("End:", modifier = Modifier.width(60.dp))
+                    Text("End:", modifier = Modifier.width(60.dp), color = DayPlanTheme.textSecondary)
                     OutlinedTextField(
                         value = endHour,
                         onValueChange = { endHour = it.filter { c -> c.isDigit() } },
                         modifier = Modifier.width(64.dp),
                         singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                     )
                 }
 
                 // Default task duration
-                Text("Default Task Duration", fontWeight = FontWeight.Medium)
+                Text("Default Task Duration", fontWeight = FontWeight.Medium, color = DayPlanTheme.textPrimary)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = defaultDuration,
@@ -1033,11 +1056,12 @@ private fun SettingsDialog(
                         label = { Text("Minutes") },
                         modifier = Modifier.width(100.dp),
                         singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                     )
                 }
 
                 // Default reminder
-                Text("Default Reminder", fontWeight = FontWeight.Medium)
+                Text("Default Reminder", fontWeight = FontWeight.Medium, color = DayPlanTheme.textPrimary)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = defaultReminder,
@@ -1045,6 +1069,7 @@ private fun SettingsDialog(
                         label = { Text("Minutes before end") },
                         modifier = Modifier.width(140.dp),
                         singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
                     )
                 }
             }
