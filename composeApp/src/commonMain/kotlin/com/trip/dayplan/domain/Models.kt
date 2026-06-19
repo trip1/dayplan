@@ -76,9 +76,9 @@ data class DaySchedule(
  */
 object DefaultGroups {
     val groups = listOf(
-        TaskGroup(name = "Work", colorHex = "#4A6741", sortOrder = 0),    // Sage green
-        TaskGroup(name = "Personal", colorHex = "#E8913A", sortOrder = 1), // Warm orange
-        TaskGroup(name = "Health", colorHex = "#5B8DB8", sortOrder = 2),  // Steel blue
-        TaskGroup(name = "Learning", colorHex = "#8B5CF6", sortOrder = 3), // Purple
+        TaskGroup(name = "Home", colorHex = "#4A6741", sortOrder = 0),      // Sage green
+        TaskGroup(name = "Family", colorHex = "#E8913A", sortOrder = 1),    // Warm orange
+        TaskGroup(name = "Errands", colorHex = "#5B8DB8", sortOrder = 2),   // Steel blue
+        TaskGroup(name = "Self-care", colorHex = "#8B5CF6", sortOrder = 3), // Purple
     )
 }

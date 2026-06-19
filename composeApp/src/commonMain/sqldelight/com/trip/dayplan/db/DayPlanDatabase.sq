@@ -22,10 +22,10 @@ CREATE TABLE IF NOT EXISTS Task (
 );
 
 INSERT OR IGNORE INTO TaskGroup (name, colorHex, sortOrder) VALUES
-    ('Work', '#4A6741', 0),
-    ('Personal', '#E8913A', 1),
-    ('Health', '#5B8DB8', 2),
-    ('Learning', '#8B5CF6', 3);
+    ('Home', '#4A6741', 0),
+    ('Family', '#E8913A', 1),
+    ('Errands', '#5B8DB8', 2),
+    ('Self-care', '#8B5CF6', 3);
 
 getAllGroups:
 SELECT * FROM TaskGroup ORDER BY sortOrder;

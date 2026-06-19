@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trip.dayplan.domain.AppSettings
 import com.trip.dayplan.domain.DayTask
+import com.trip.dayplan.domain.HomeTaskBoard
+import com.trip.dayplan.domain.HomeTaskLists
 import com.trip.dayplan.domain.TaskGroup
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -191,6 +193,15 @@ private fun NotificationTicker(viewModel: ScheduleViewModel) {
 fun App(viewModel: ScheduleViewModel) {
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val nowMinute by produceState(initialValue = 0) {
+        while (true) {
+            val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+            value = now.hour * 60 + now.minute
+            delay(60_000)
+        }
+    }
+    val visibleTasks = viewModel.getFilteredTasks()
+    val homeLists = HomeTaskBoard.split(visibleTasks, nowMinute)
 
     // Schedule notifications for today's tasks
     LaunchedEffect(state.tasks) {
@@ -231,13 +242,6 @@ fun App(viewModel: ScheduleViewModel) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Group filter chips
-                GroupFilterBar(
-                    groups = state.groups,
-                    activeGroupId = state.activeFilterGroupId,
-                    onToggleFilter = { viewModel.toggleGroupFilter(it) },
-                )
-
                 // Top bar
                 DateHeader(
                     date = state.date,
@@ -246,11 +250,26 @@ fun App(viewModel: ScheduleViewModel) {
                     onSettingsClick = { viewModel.showSettingsDialog() },
                 )
 
+                // Group filter chips
+                GroupFilterBar(
+                    groups = state.groups,
+                    activeGroupId = state.activeFilterGroupId,
+                    onToggleFilter = { viewModel.toggleGroupFilter(it) },
+                )
+
+                HomeTaskOverview(
+                    lists = homeLists,
+                    onTaskClick = { viewModel.showEditTask(it) },
+                    onMarkDone = { task ->
+                        scope.launch { viewModel.toggleTaskComplete(task) }
+                    },
+                )
+
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Timeline
                 TimelineView(
-                    tasks = viewModel.getFilteredTasks(),
+                    tasks = visibleTasks,
                     groups = state.groups,
                     onAddTask = { viewModel.showAddTaskDialog() },
                     onTaskClick = { viewModel.showEditTask(it) },
@@ -282,7 +301,9 @@ fun App(viewModel: ScheduleViewModel) {
                 AddTaskDialog(
                     editingTask = state.editingTask,
                     groups = state.groups,
+                    selectedDate = state.date,
                     prefillStartMinute = state.prefillStartMinute,
+                    defaultDuration = state.settings.defaultDuration,
                     defaultReminder = state.settings.defaultReminder,
                     onDismiss = { viewModel.dismissAddTaskDialog() },
                     onSave = { task ->
@@ -347,7 +368,7 @@ private fun GroupFilterBar(
         FilterChip(
             selected = activeGroupId == null,
             onClick = { onToggleFilter(null) },
-            label = { Text("All", fontSize = 12.sp) },
+            label = { Text("Everything", fontSize = 12.sp) },
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = DayPlanTheme.primary,
                 selectedLabelColor = Color.White,
@@ -364,6 +385,165 @@ private fun GroupFilterBar(
                     selectedLabelColor = Color.White,
                 ),
             )
+        }
+    }
+}
+
+@Composable
+private fun HomeTaskOverview(
+    lists: HomeTaskLists,
+    onTaskClick: (DayTask) -> Unit,
+    onMarkDone: (DayTask) -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        color = DayPlanTheme.surface,
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "My day",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DayPlanTheme.textPrimary,
+                    )
+                    Text(
+                        text = "Pick what matters, do one thing, mark it done.",
+                        fontSize = 12.sp,
+                        color = DayPlanTheme.textSecondary,
+                    )
+                }
+                Text(
+                    text = "${lists.done.size}/${lists.toDo.size + lists.doingNow.size + lists.done.size}",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = DayPlanTheme.primary,
+                )
+            }
+
+            HomeTaskSection(
+                title = "Doing now",
+                tasks = lists.doingNow,
+                emptyText = "Nothing is active right now.",
+                onTaskClick = onTaskClick,
+                onMarkDone = onMarkDone,
+                highlight = true,
+            )
+            HomeTaskSection(
+                title = "To do",
+                tasks = lists.toDo,
+                emptyText = "Nothing waiting. Nice work.",
+                onTaskClick = onTaskClick,
+                onMarkDone = onMarkDone,
+            )
+            HomeTaskSection(
+                title = "Done",
+                tasks = lists.done,
+                emptyText = "Finished tasks will show here.",
+                onTaskClick = onTaskClick,
+                onMarkDone = onMarkDone,
+                completed = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeTaskSection(
+    title: String,
+    tasks: List<DayTask>,
+    emptyText: String,
+    onTaskClick: (DayTask) -> Unit,
+    onMarkDone: (DayTask) -> Unit,
+    highlight: Boolean = false,
+    completed: Boolean = false,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = "$title (${tasks.size})",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (highlight) DayPlanTheme.primary else DayPlanTheme.textPrimary,
+        )
+        if (tasks.isEmpty()) {
+            Text(
+                text = emptyText,
+                fontSize = 12.sp,
+                color = DayPlanTheme.textSecondary,
+            )
+        } else {
+            tasks.take(3).forEach { task ->
+                HomeTaskRow(
+                    task = task,
+                    onTaskClick = { onTaskClick(task) },
+                    onMarkDone = { onMarkDone(task) },
+                    completed = completed,
+                )
+            }
+            if (tasks.size > 3) {
+                Text(
+                    text = "+${tasks.size - 3} more on the timeline",
+                    fontSize = 12.sp,
+                    color = DayPlanTheme.textSecondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeTaskRow(
+    task: DayTask,
+    onTaskClick: () -> Unit,
+    onMarkDone: () -> Unit,
+    completed: Boolean,
+) {
+    val taskColor = try { parseHexColor(task.colorHex) } catch (e: Exception) { DayPlanTheme.primary }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(taskColor.copy(alpha = if (completed) 0.08f else 0.14f), RoundedCornerShape(12.dp))
+            .clickable { onTaskClick() }
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(taskColor, RoundedCornerShape(3.dp)),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = task.name,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = DayPlanTheme.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${formatTime(task.startTime)} • ${task.durationMinutes} min",
+                fontSize = 11.sp,
+                color = DayPlanTheme.textSecondary,
+            )
+        }
+        if (!completed) {
+            TextButton(onClick = onMarkDone) {
+                Text("Done")
+            }
         }
     }
 }
@@ -410,6 +590,12 @@ private fun DateHeader(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous day", tint = DayPlanTheme.textSecondary)
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Today at home",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = DayPlanTheme.textSecondary,
+            )
             Text(
                 text = formatted,
                 fontSize = 20.sp,
@@ -726,7 +912,9 @@ private fun TaskBlock(
 private fun AddTaskDialog(
     editingTask: DayTask?,
     groups: List<TaskGroup>,
+    selectedDate: String,
     prefillStartMinute: Int?,
+    defaultDuration: Int = 30,
     defaultReminder: Int = 5,
     onDismiss: () -> Unit,
     onSave: (DayTask) -> Unit,
@@ -734,24 +922,22 @@ private fun AddTaskDialog(
 ) {
     var name by remember { mutableStateOf(editingTask?.name ?: "") }
     var description by remember { mutableStateOf(editingTask?.description ?: "") }
-    var duration by remember { mutableStateOf((editingTask?.durationMinutes ?: 30).toString()) }
+    var duration by remember { mutableStateOf((editingTask?.durationMinutes ?: defaultDuration).toString()) }
     val defaultMinute = editingTask?.startMinute ?: prefillStartMinute ?: 9 * 60
     var startHour by remember { mutableStateOf(defaultMinute / 60) }
     var startMin by remember { mutableStateOf(defaultMinute % 60) }
     var selectedGroupId by remember { mutableStateOf<Long?>(editingTask?.groupId) }
     var reminderMinutes by remember { mutableStateOf(editingTask?.reminderMinutes ?: defaultReminder) }
 
-    val date = ScheduleUiState.today()
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (editingTask == null) "New Task" else "Edit Task", color = DayPlanTheme.textPrimary) },
+        title = { Text(if (editingTask == null) "New thing to do" else "Change this task", color = DayPlanTheme.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Task name") },
+                    label = { Text("What needs doing?") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
@@ -759,7 +945,7 @@ private fun AddTaskDialog(
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Notes (optional)") },
+                    label = { Text("Notes if helpful") },
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 2,
                     textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
@@ -768,7 +954,7 @@ private fun AddTaskDialog(
                     OutlinedTextField(
                         value = duration,
                         onValueChange = { duration = it.filter { c -> c.isDigit() } },
-                        label = { Text("Minutes") },
+                        label = { Text("How long?") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
@@ -797,7 +983,7 @@ private fun AddTaskDialog(
                 }
                 // Reminder picker
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Remind", fontSize = 12.sp, color = DayPlanTheme.textSecondary, modifier = Modifier.width(56.dp))
+                    Text("Nudge", fontSize = 12.sp, color = DayPlanTheme.textSecondary, modifier = Modifier.width(56.dp))
                     val reminderOptions = listOf(0, 1, 3, 5, 10, 15, 30)
                     reminderOptions.forEach { mins ->
                         FilterChip(
@@ -813,7 +999,7 @@ private fun AddTaskDialog(
                     }
                 }
                 // Group selector
-                Text("Group", fontSize = 12.sp, color = DayPlanTheme.textSecondary)
+                Text("Area", fontSize = 12.sp, color = DayPlanTheme.textSecondary)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -824,7 +1010,7 @@ private fun AddTaskDialog(
                     FilterChip(
                         selected = selectedGroupId == null,
                         onClick = { selectedGroupId = null },
-                        label = { Text("None") },
+                        label = { Text("No area") },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = DayPlanTheme.textSecondary.copy(alpha = 0.2f),
                             selectedLabelColor = DayPlanTheme.textPrimary,
@@ -870,7 +1056,7 @@ private fun AddTaskDialog(
                         description = description,
                         durationMinutes = durationMin,
                         groupId = selectedGroupId,
-                        date = date,
+                        date = selectedDate,
                         startMinute = startHour * 60 + roundedMin,
                         reminderMinutes = reminderMinutes,
                     )
@@ -913,13 +1099,13 @@ private fun AddGroupDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Group", color = DayPlanTheme.textPrimary) },
+        title = { Text("New area", color = DayPlanTheme.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Group name") },
+                    label = { Text("Area name") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = DayPlanTheme.textPrimary),
