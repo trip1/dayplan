@@ -51,6 +51,7 @@ data class TaskGroup(
 /**
  * App-wide user settings, persisted across launches.
  */
+@Serializable
 data class AppSettings(
     val darkTheme: Boolean = false,
     val startHour: Int = 6,       // Timeline starts at this hour

@@ -667,7 +667,7 @@ private fun TimelineView(
                         val label = if (min == 0) {
                             formatHour(hour)
                         } else {
-                            "%02d".format(min)
+                            min.toString().padStart(2, '0')
                         }
                         Box(
                             modifier = Modifier

@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build DayPlan Distribution
 
 on:
   push:
@@ -25,31 +25,36 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Build Debug APK
-        run: ./gradlew :composeApp:assembleDebug
-
-      - name: Find APK
-        id: find-apk
+      - name: Install desktop packaging dependencies
         run: |
-          APK_PATH=$(find composeApp/build/outputs/apk/debug -name "*.apk" | head -1)
-          APK_NAME=$(basename "$APK_PATH")
-          echo "path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "name=$APK_NAME" >> $GITHUB_OUTPUT
+          sudo apt-get update
+          sudo apt-get install -y fakeroot dpkg
 
-      - name: Upload Debug APK (artifact)
+      - name: Grant execute permission for scripts
+        run: chmod +x gradlew scripts/build-dist.sh
+
+      - name: Build local distribution
+        run: scripts/build-dist.sh
+
+      - name: Upload distribution artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dayplan-debug-apk
-          path: ${{ steps.find-apk.outputs.path }}
+          name: dayplan-dist
+          path: |
+            dist/android/*.apk
+            dist/web/*.zip
+            dist/desktop/*
+            dist/manifest.txt
 
-      - name: Create Release with APK (on tag)
+      - name: Create Release with distribution artifacts (on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: DayPlan ${{ github.ref_name }}
-          files: ${{ steps.find-apk.outputs.path }}
+          files: |
+            dist/android/*.apk
+            dist/web/*.zip
+            dist/desktop/*
+            dist/manifest.txt
           generate_release_notes: true

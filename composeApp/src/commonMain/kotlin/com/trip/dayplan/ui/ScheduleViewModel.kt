@@ -1,6 +1,6 @@
 package com.trip.dayplan.ui
 
-import com.trip.dayplan.data.DayPlanRepository
+import com.trip.dayplan.data.DayPlanStore
 import com.trip.dayplan.data.SettingsStore
 import com.trip.dayplan.domain.AppSettings
 import com.trip.dayplan.domain.DayTask
@@ -51,7 +51,7 @@ data class ScheduleUiState(
  * ViewModel for the schedule screen. Manages tasks, groups, settings, and UI state.
  */
 class ScheduleViewModel(
-    private val repository: DayPlanRepository,
+    private val repository: DayPlanStore,
     private val settingsStore: SettingsStore,
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())

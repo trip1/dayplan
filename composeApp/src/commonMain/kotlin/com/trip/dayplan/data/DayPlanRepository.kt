@@ -9,12 +9,11 @@ import com.trip.dayplan.domain.DayTask
 import com.trip.dayplan.domain.DefaultGroups
 import com.trip.dayplan.domain.TaskGroup
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-class DayPlanRepository(private val db: DayPlanDatabase) {
+class DayPlanRepository(private val db: DayPlanDatabase) : DayPlanStore {
     private val q = db.dayPlanDatabaseQueries
 
     init {
@@ -31,32 +30,32 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
     }
 
     // Groups
-    fun observeGroups(): Flow<List<TaskGroup>> {
+    override fun observeGroups(): Flow<List<TaskGroup>> {
         return q.getAllGroups()
             .asFlow()
-            .mapToList(Dispatchers.IO)
+            .mapToList(Dispatchers.Default)
             .map { rows -> rows.map { TaskGroup(it.id, it.name, it.colorHex, it.sortOrder.toInt()) } }
     }
 
-    suspend fun getGroups(): List<TaskGroup> = observeGroups().first()
+    override suspend fun getGroups(): List<TaskGroup> = observeGroups().first()
 
-    suspend fun insertGroup(name: String, colorHex: String, sortOrder: Int) {
+    override suspend fun insertGroup(name: String, colorHex: String, sortOrder: Int) {
         q.insertGroup(name, colorHex, sortOrder.toLong())
     }
 
-    suspend fun updateGroup(group: TaskGroup) {
+    override suspend fun updateGroup(group: TaskGroup) {
         q.updateGroup(group.name, group.colorHex, group.sortOrder.toLong(), group.id)
     }
 
-    suspend fun deleteGroup(id: Long) {
+    override suspend fun deleteGroup(id: Long) {
         q.deleteGroup(id)
     }
 
     // Tasks
-    fun observeTasksForDate(date: String): Flow<List<DayTask>> {
+    override fun observeTasksForDate(date: String): Flow<List<DayTask>> {
         return q.getTasksForDate(date)
             .asFlow()
-            .mapToList(Dispatchers.IO)
+            .mapToList(Dispatchers.Default)
             .map { rows -> rows.map { row ->
                 DayTask(
                     id = row.id,
@@ -74,7 +73,7 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
             }}
     }
 
-    suspend fun getTasksForDate(date: String): List<DayTask> =
+    override suspend fun getTasksForDate(date: String): List<DayTask> =
         q.getTasksForDate(date).executeAsList().map { row ->
             DayTask(
                 id = row.id,
@@ -91,7 +90,7 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
             )
         }
 
-    suspend fun getTaskById(id: Long): DayTask? {
+    override suspend fun getTaskById(id: Long): DayTask? {
         val row = q.getTaskById(id).executeAsOneOrNull() ?: return null
         return DayTask(
             id = row.id,
@@ -108,7 +107,7 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
         )
     }
 
-    suspend fun insertTask(task: DayTask) {
+    override suspend fun insertTask(task: DayTask) {
         q.insertTask(
             task.name, task.description, task.durationMinutes.toLong(),
             task.groupId, task.date, task.startMinute.toLong(),
@@ -117,7 +116,7 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
         )
     }
 
-    suspend fun updateTask(task: DayTask) {
+    override suspend fun updateTask(task: DayTask) {
         q.updateTask(
             task.name, task.description, task.durationMinutes.toLong(),
             task.groupId, task.date, task.startMinute.toLong(),
@@ -127,16 +126,16 @@ class DayPlanRepository(private val db: DayPlanDatabase) {
         )
     }
 
-    suspend fun deleteTask(id: Long) {
+    override suspend fun deleteTask(id: Long) {
         q.deleteTask(id)
     }
 
-    suspend fun markTaskComplete(id: Long) {
+    override suspend fun markTaskComplete(id: Long) {
         q.markTaskComplete(id)
     }
 
     // Schedule helper
-    fun observeSchedule(date: String): Flow<DaySchedule> {
+    override fun observeSchedule(date: String): Flow<DaySchedule> {
         return observeTasksForDate(date).map { tasks ->
             DaySchedule(date = date, tasks = tasks)
         }

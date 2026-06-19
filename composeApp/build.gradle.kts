@@ -13,6 +13,16 @@ plugins {
 kotlin {
     androidTarget { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 
+    js(IR) {
+        moduleName = "dayplan"
+        browser {
+            commonWebpackConfig {
+                outputFileName = "dayplan.js"
+            }
+        }
+        binaries.executable()
+    }
+
     listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { iosTarget ->
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
@@ -20,7 +30,7 @@ kotlin {
         }
     }
 
-    jvm("desktop")
+    jvm("desktop") { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }
 
     sourceSets {
         val desktopMain by getting
@@ -71,8 +81,8 @@ android {
         applicationId = "com.trip.dayplan"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
     buildTypes { getByName("release") { isMinifyEnabled = false } }
@@ -99,7 +109,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "dayplan"
-            packageVersion = "1.0.0"
+            packageVersion = "1.4.0"
         }
     }
 }

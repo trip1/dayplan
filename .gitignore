@@ -39,5 +39,11 @@ local.properties
 *.ap_
 *.dex
 
+# Local distribution artifacts
+/dist/**
+!/dist/
+!/dist/README.md
+/kotlin-js-store/
+
 # OS
 Thumbs.db
